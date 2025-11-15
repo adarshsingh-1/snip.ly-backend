@@ -1,21 +1,16 @@
-const { customAlphabet } = require('nanoid');
 const validator = require('validator');
 const Link = require('../models/links');
 
-const nanoid = customAlphabet('23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz', 6);
-
-// Normalize and validate URL
+// NORMALIZE AND VALIDATE URL
 const normalizeUrl = (url) => {
   if (!url) return null;
   
   let normalized = validator.trim(url);
-  
-  // Add http:// if no protocol
+
   if (!normalized.match(/^https?:\/\//i)) {
     normalized = `http://${normalized}`;
   }
-  
-  // Validate URL format
+
   if (!validator.isURL(normalized, {
     protocols: ['http', 'https'],
     require_protocol: true,
@@ -24,26 +19,28 @@ const normalizeUrl = (url) => {
   })) {
     return null;
   }
-  
+
   return normalized;
 };
 
-// Create short link
+// CREATE LINK
 exports.createLink = async (req, res) => {
   try {
+    // IMPORT nanoid (ESM ONLY)
+    const { customAlphabet } = await import('nanoid');
+    const nanoid = customAlphabet('23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz', 6);
+
     const { url } = req.body;
 
     if (!url) {
       return res.status(400).json({ message: 'URL is required' });
     }
 
-    // Sanitize and validate URL
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
       return res.status(400).json({ message: 'Invalid URL format' });
     }
 
-    // Generate unique shortId with retry logic
     let shortId;
     let attempts = 0;
     const maxAttempts = 3;
@@ -66,23 +63,25 @@ exports.createLink = async (req, res) => {
     });
 
     const shortDomain = process.env.SHORT_DOMAIN || `http://localhost:${process.env.PORT || 3000}`;
-    return res.status(201).json({ 
-      ...link.toObject(), 
-      shortUrl: `${shortDomain}/${shortId}` 
+
+    return res.status(201).json({
+      ...link.toObject(),
+      shortUrl: `${shortDomain}/${shortId}`
     });
+
   } catch (err) {
     console.error('Create link error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-// Get user's links
+// GET USER LINKS
 exports.getUserLinks = async (req, res) => {
   try {
     if (!req.userId) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    
+
     const links = await Link.find({ userId: req.userId }).sort({ createdAt: -1 });
     return res.json(Array.isArray(links) ? links : []);
   } catch (err) {
@@ -91,12 +90,12 @@ exports.getUserLinks = async (req, res) => {
   }
 };
 
-// Delete link
+// DELETE LINK
 exports.deleteLink = async (req, res) => {
   try {
-    const link = await Link.findOne({ 
-      _id: req.params.id, 
-      userId: req.userId 
+    const link = await Link.findOne({
+      _id: req.params.id,
+      userId: req.userId
     });
 
     if (!link) {
@@ -105,28 +104,30 @@ exports.deleteLink = async (req, res) => {
 
     await Link.deleteOne({ _id: req.params.id });
     return res.json({ message: 'Link deleted successfully' });
+
   } catch (err) {
     console.error('Delete link error:', err);
     return res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-// Redirect to original URL
+// REDIRECT LINK
 exports.redirectLink = async (req, res) => {
   try {
     const link = await Link.findOne({ shortId: req.params.shortId });
     if (!link) {
       return res.status(404).send('Link not found');
     }
-    
+
     link.clicks += 1;
     await link.save();
-    
-    const target = link.originalUrl.match(/^https?:\/\//i) 
-      ? link.originalUrl 
+
+    const target = link.originalUrl.match(/^https?:\/\//i)
+      ? link.originalUrl
       : `https://${link.originalUrl}`;
-    
+
     return res.redirect(target);
+
   } catch (err) {
     console.error('Redirect error:', err);
     return res.status(500).send('Server error');
